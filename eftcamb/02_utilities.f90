@@ -39,8 +39,9 @@ module EFTCAMB_mixed_algorithms
         character(len=:), allocatable :: string
     end type string
 
-    ! real number that gets represented as a Nan:
-    real(dl), parameter :: double_NaN = TRANSFER((/ Z'00000000', Z'7FF80000' /),1.0_8) !< there are situations where we need to initialize a variable to Nan...
+    ! real number that gets represented as a NaN:
+    integer(4), parameter :: double_NaN_bits(2) = (/ int(Z'00000000',kind=4), int(Z'7FF80000',kind=4) /)
+    real(dl),  parameter :: double_NaN       = TRANSFER(double_NaN_bits, 1.0_8) !< there are situations where we need to initialize a variable to NaN...
 
 contains
 
