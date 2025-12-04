@@ -101,6 +101,13 @@ all: camb camblib.so libcamb
 
 libcamb: $(CAMBLIB)
 
+# Horndeski sampler executable
+HORNDESKI_SAMP_OBJ = $(OUTPUT_DIR)/Horndeski_sampler.o
+
+Horndeski_sampler: directories $(CAMBOBJ) $(HORNDESKI_SAMP_OBJ)
+	$(F90C) $(F90FLAGS) $(CAMBOBJ) $(HORNDESKI_SAMP_OBJ) $(F90CRLINK) -o $@
+
+
 
 $(OUTPUT_DIR)/subroutines.o: $(OUTPUT_DIR)/constants.o $(OUTPUT_DIR)/utils.o
 $(OUTPUT_DIR)/$(POWERSPECTRUM).o: $(OUTPUT_DIR)/subroutines.o  $(OUTPUT_DIR)/inifile.o

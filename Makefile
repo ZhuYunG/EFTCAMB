@@ -113,3 +113,16 @@ DEBUGFLAGS ?= FFLAGS
 Debug: FFLAGS=$(DEBUGFLAGS)
 
 include ./Makefile_main
+
+# # Convenience target to build the Horndeski sampler even if the include above is skipped
+# Horndeski_sampler:
+# 	$(MAKE) -f Makefile_main Horndeski_sampler
+
+# FFLAGS += -O0 -g -fbacktrace -ffree-line-length-none -cpp
+DEBUGFLAGS = $(FFLAGS) -O0 -g -fbacktrace -ffree-line-length-none -ffpe-trap=invalid,overflow,zero
+Debug: FFLAGS=$(DEBUGFLAGS)
+
+
+# 不要再在这里全局加 -O0 -g 了，注释掉原来的这一行：
+# FFLAGS += -O0 -g -fbacktrace -ffree-line-length-none -cpp
+

@@ -40,6 +40,7 @@ module EFTCAMB_main
     use EFTCAMB_LE_Horava
     use EFTCAMB_Kmouflage_Mod
     use EFTCAMB_FM_quintessence
+    use EFTCAMB_FM_horndeski
 
     implicit none
 
@@ -331,6 +332,9 @@ contains
                     case(4)
                         allocate( EFTCAMB_5e::self%model )
                         call self%model%init( 'Quintessence', 'Quintessence' )
+                    case(5)
+                        allocate( EFTCAMB_Horndeski::self%model )
+                        call self%model%init( 'Horndeski', 'Horndeski' )
                     case default
                         write(*,'(a,I3)') 'No model corresponding to EFTFlag =', self%EFTflag
                         write(*,'(a,I3)') 'and FullMappingEFTmodel =', self%FullMappingEFTmodel

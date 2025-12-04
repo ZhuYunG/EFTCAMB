@@ -32,7 +32,7 @@ path_dll   = '$(DLL_DIR)/'
 def run( verbose=True, overwrite=None, outdir=None ):
 
     # some feedback:
-    print("\033[032m"+'Generating EFTCAMB dependencies'+"\033[039m")
+    print "\033[032m"+'Generating EFTCAMB dependencies'+"\033[039m"
 
     # grab the EFTCAMB/CAMB paths:
     eftcamb_dir = os.path.dirname(os.path.abspath(__file__))
@@ -82,7 +82,7 @@ def run( verbose=True, overwrite=None, outdir=None ):
                 try:
                     tmp.append( mod2fil_camb[j.lower()] )
                 except:
-                    print("\033[031mError\033[039m module \033[032m"+j+"\033[039m not defined in any files. Skipping...")
+                    print "\033[031mError\033[039m module \033[032m"+j+"\033[039m not defined in any files. Skipping..."
         if len(tmp)>0:
             dependencies[i.file_name]=tmp
 
@@ -97,17 +97,17 @@ def run( verbose=True, overwrite=None, outdir=None ):
             dependencies[i.file_name]=tmp
 
     if verbose:
-        for i in list(dependencies.keys()):
-            print("\033[032m"+i+"\033[039m depends on :\033[034m")
-            for j in dependencies[i]: print("\t"+j)
-            print("\033[039m")
+        for i in dependencies.keys():
+            print "\033[032m"+i+"\033[039m depends on :\033[034m"
+            for j in dependencies[i]: print "\t"+j
+            print "\033[039m"
 
     if outdir is not None:
         outname = os.path.join( outdir, output )
     else:
         outname = output
 
-    print("\033[032m"+'Saving dependencies to: '+"\033[039m"+outname)
+    print "\033[032m"+'Saving dependencies to: '+"\033[039m"+outname
 
     tmp=write_depend(outfile=outname,dep=dependencies,overwrite=True , path=path_out)
     tmp=write_depend(outfile=outname,dep=dependencies,overwrite=False, path=path_dll)
@@ -128,7 +128,7 @@ def write_depend(outfile="makefile.dep",dep=[],overwrite=False, path=""):
     elif opt == "n":
         f = open(outfile,'a')
 
-    for i in list(dep.keys()):
+    for i in dep.keys():
         tmp,fil=os.path.split(i)
         stri="\n"+path+fil.split(".")[0]+".o"+" : "
         for j in dep[i]:
@@ -143,7 +143,7 @@ def select_sources( files, ext=[".f",".f90",".F90"] ):
     "Return all files ending with any of ext in the input list"
     fil=[]
     for i in ext:
-        fil.extend([x for x in files if x.endswith(i)])
+        fil.extend(filter(lambda x: x.endswith(i),files))
     return fil
 
 def get_source(ext=[".f",".f90",".F90"]):
@@ -151,7 +151,7 @@ def get_source(ext=[".f",".f90",".F90"]):
     tmp=os.listdir(".")
     fil=[]
     for i in ext:
-        fil.extend([x for x in tmp if x.endswith(i)])
+        fil.extend(filter(lambda x: x.endswith(i),tmp))
     return fil
 
 def create_file_objs(files=None, macros={}):
@@ -191,7 +191,7 @@ def get_uses(infile=None, macros={}):
     uniq_mods = list(set(uses))
 
     for i, mod in enumerate(uniq_mods):
-        for k, v in list(macros.items()):
+        for k, v in macros.items():
             if re.match(k, mod, re.IGNORECASE):
                 uniq_mods[i] = mod.replace(k,v)
 
@@ -230,7 +230,7 @@ def get_depends(fob=[],m2f=[]):
             try:
                 tmp.append(m2f[j.lower()])
             except:
-                print("\033[031mError\033[039m module \033[032m"+j+"\033[039m not defined in any files. Skipping...")
+                print "\033[031mError\033[039m module \033[032m"+j+"\033[039m not defined in any files. Skipping..."
 
         deps[i.file_name]=tmp
 

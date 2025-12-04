@@ -1,0 +1,122 @@
+***************************************************************
+     ______________________   __  ______  
+    / __/ __/_  __/ ___/ _ | /  |/  / _ ) 
+   / _// _/  / / / /__/ __ |/ /|_/ / _  | 
+  /___/_/   /_/  \___/_/ |_/_/  /_/____/   V3.0 Mar19
+  
+***************************************************************
+
+ EFTCAMB feedback level  =  3
+
+ EFTCAMB stability flags:
+  Mathematical stability =  F
+  Ghost stability        =  T
+  Gradient stability     =  T
+  Mass stability         =  F
+  Additional priors      =  T
+
+ EFTCAMB model flags:
+   EFTflag             =  4
+   FullMappingEFTmodel =  5
+
+   Model               =  Horndeski
+   Number of params    =  4
+
+   Omega_model         =  2
+   Lambda_model        =  2
+
+Taylor series parametrization: Omega
+ of order (Omega_Taylor_order):   0
+   Omegaa0             =    1.000000
+   Omega0              =    0.000000
+Taylor series parametrization: Lambda
+ of order (Lambda_Taylor_order):   0
+   Lambdaa0            =    1.000000
+   Lambda0             =    0.000000
+
+***************************************************************
+ EFTCAMB Horndeski background solver
+
+***************************************************************
+EFTCAMB parameters cache content:
+***************************************************************
+ Omega_CDM  :  0.228571E+00
+ Omega_b    :  0.461224E-01
+ Omega_v    :  0.724000E+00
+ Omega_k    :  0.000000E+00
+ Omega_n    :  0.130612E-02
+ Omega_g    :  0.504653E-04
+ Omega_r    :  0.232736E-04
+ h          :    70.000000
+ h_Mpc      :  0.233495E-03
+ grhog      :  0.825409E-11
+ grnonomass :  0.380661E-11
+ grhoc      :  0.373850E-07
+ grhob      :  0.754377E-08
+ grhov      :  0.118417E-06
+ grhok      :  0.000000E+00
+ Num_Nu_Massive      :         1
+ Nu_mass_eigenstates :         1
+ grhormass(  1)      :  0.190331E-11
+ nu_masses(  1)      :  0.353713E+03
+***************************************************************
+-------------------------------------------------------
+ Horndeski IC finder: scanning H2_ini
+   x_initial =  -1.8421E+01
+   a_initial =   1.0000E-08
+   H0_wanted^2 =   5.4520E-08
+   H2_guess, H2_min, H2_max =   5.4520E+00  5.4520E-04  5.4520E+04
+   Scan table: index, H2_try, H0^2(H2_try), solver_ok
+   scan:   0  5.451985E-04  0.000000E+00 F
+   scan:   1  8.640814E-04  0.000000E+00 F
+   scan:   2  1.369477E-03  0.000000E+00 F
+   scan:   3  2.170474E-03  0.000000E+00 F
+   scan:   4  3.439970E-03  0.000000E+00 F
+   scan:   5  5.451985E-03  0.000000E+00 F
+   scan:   6  8.640814E-03  0.000000E+00 F
+   scan:   7  1.369477E-02  0.000000E+00 F
+   scan:   8  2.170474E-02  0.000000E+00 F
+   scan:   9  3.439970E-02  0.000000E+00 F
+   scan:  10  5.451985E-02  0.000000E+00 F
+   scan:  11  8.640814E-02  0.000000E+00 F
+   scan:  12  1.369477E-01  0.000000E+00 F
+   scan:  13  2.170474E-01  0.000000E+00 F
+   scan:  14  3.439970E-01  0.000000E+00 F
+   scan:  15  5.451985E-01  0.000000E+00 F
+   scan:  16  8.640814E-01  0.000000E+00 F
+   scan:  17  1.369477E+00  0.000000E+00 F
+   scan:  18  2.170474E+00  0.000000E+00 F
+   scan:  19  3.439970E+00  0.000000E+00 F
+   scan:  20  5.451985E+00  0.000000E+00 F
+   scan:  21  8.640814E+00  0.000000E+00 F
+   scan:  22  1.369477E+01  0.000000E+00 F
+   scan:  23  2.170474E+01  0.000000E+00 F
+   scan:  24  3.439970E+01  0.000000E+00 F
+   scan:  25  5.451985E+01  0.000000E+00 F
+   scan:  26  8.640814E+01  0.000000E+00 F
+   scan:  27  1.369477E+02  0.000000E+00 F
+   scan:  28  2.170474E+02  0.000000E+00 F
+   scan:  29  3.439970E+02  0.000000E+00 F
+   scan:  30  5.451985E+02  0.000000E+00 F
+   scan:  31  8.640814E+02  0.000000E+00 F
+   scan:  32  1.369477E+03  0.000000E+00 F
+   scan:  33  2.170474E+03  0.000000E+00 F
+   scan:  34  3.439970E+03  0.000000E+00 F
+   scan:  35  5.451985E+03  0.000000E+00 F
+   scan:  36  8.640814E+03  0.000000E+00 F
+   scan:  37  1.369477E+04  0.000000E+00 F
+   scan:  38  2.170474E+04  0.000000E+00 F
+   scan:  39  3.439970E+04  0.000000E+00 F
+   scan:  40  5.451985E+04  0.000000E+00 F
+   EFTCAMBHorndeskiFindInitialConditions: bracket for H2_ini not found
+   (No successful background integration for any H2 in scan range)
+ERROR STOP 
+
+Error termination. Backtrace:
+#0  0x1033487b7
+#1  0x103349393
+#2  0x10334a687
+#3  0x102c330e7
+#4  0x102c342ff
+***************************************************************
+ Error result EFTCAMB: background solver failed

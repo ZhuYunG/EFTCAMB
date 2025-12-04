@@ -29,7 +29,7 @@ SAMPLES_DIR = CAMB_DIR / "Horndeski_samples_py"
 CAMB_EXE = CAMB_DIR / "camb"
 
 # 采样次数
-N_SAMPLES = 10000
+N_SAMPLES = 5
 
 
 # ===== 1. 设定 Horndeski 参数及其采样范围 =====
@@ -66,6 +66,33 @@ def sample_parameters():
         u = np.random.rand()
         params[name] = pmin + u * (pmax - pmin)
     return params
+
+# 以下用于调试排查pipeline本身是否存在问题, 根据测试, pipeline本身没有问题
+# def sample_parameters():
+#     # 暂时用一组你知道能跑通的参数，先排查管线
+#     return {
+#         "OmegaN0": 0.00,
+#         "OmegaN1": 0.00,
+#         "OmegaN2": 0.00,
+#         "OmegaN3": 0.00,
+#         "OmegaN4": 0.00,
+#         "OmegaN5": 0.00,
+#         "OmegaD1": 0.00,
+#         "OmegaD2": 0.00,
+#         "OmegaD3": 0.00,
+#         "OmegaD4": 0.00,
+#         "LambdaN0": 0.00,
+#         "LambdaN1": 0.00,
+#         "LambdaN2": 0.00,
+#         "LambdaN3": 0.00,
+#         "LambdaN4": 0.00,
+#         "LambdaN5": 0.00,
+#         "LambdaD1": 0.00,
+#         "LambdaD2": 0.00,
+#         "LambdaD3": 0.00,
+#         "LambdaD4": 0.00,
+#     }
+
 
 
 # ===== 2. 从模板 ini 生成本次运行用的 ini =====
@@ -176,6 +203,11 @@ def run_camb(run_ini_path):
         text=True
     )
 
+    print("  [DEBUG] returncode:", result.returncode)
+    # 可选：看一眼 stdout 前几行
+    for line in result.stdout.splitlines()[:3]:
+        print("    [STDOUT]", line)
+
     success = (result.returncode == 0)
     return success, result.stdout, result.stderr
 
@@ -212,6 +244,9 @@ def collect_background(sample_id):
 
     if not background_path.is_file():
         raise FileNotFoundError(f"找不到背景输出文件: {background_path}")
+    
+    stat = background_path.stat()
+    print("  [DEBUG] Horndeski_solution.dat size:", stat.st_size)
 
     target_path = SAMPLES_DIR / f"Horndeski_sample_{sample_id}.dat"
     shutil.copy2(background_path, target_path)

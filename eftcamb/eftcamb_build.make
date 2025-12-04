@@ -52,6 +52,9 @@ $(DLL_DIR)/%.o: $(EFTCAMB_DIR)/%.f
 $(DLL_DIR)/%.o: $(EFTCAMB_DIR)/*/%.f
 	$(F90C) $(SF90FLAGS) -c $< -o $(DLL_DIR)/$*.o
 
+# 手动依赖：Pure EFT 依赖 Pade 模块
+$(OUTPUT_DIR)/07p1_Pure_EFT_std.o: $(OUTPUT_DIR)/04p010_pade_series_parametrizations_1D.o
+
 # add the EFTCAMB files to the standard ones:
 CAMBOBJ += $(EFT_OBJ)
 CAMBSO  += $(EFT_SOJ)
