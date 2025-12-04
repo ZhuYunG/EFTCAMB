@@ -11,6 +11,8 @@
 *.o
 *.a
 *.pyc
+params_EFT_*.ini
+*.dat
 
 # ignore the profiler file:
 gmon.out
