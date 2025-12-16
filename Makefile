@@ -44,7 +44,7 @@ ifeq "$(gfortErr)" "0"
 F90C     = gfortran-11
 SFFLAGS =  -shared -fPIC
 
-FFLAGS =  -O3 -llapack -lblas -fopenmp -ffast-math -fmax-errors=4 -ffree-line-length-none -funroll-loops -cpp -ffpe-summary=none -fallow-invalid-boz -std=legacy
+FFLAGS =  -O3 -llapack -lblas -fopenmp -ffast-math -fmax-errors=4 -ffree-line-length-none -funroll-loops -cpp -ffpe-summary=none -fallow-invalid-boz -std=legacy -fbounds-check -fcheck=all
 DEBUGFLAGS = -cpp -llapack -lblas -g -fbounds-check -fbacktrace -ffree-line-length-none -fmax-errors=4 -ffpe-trap=invalid,overflow,zero -DDEBUG -fallow-invalid-boz -std=legacy
 MODOUT =  -J$(OUTPUT_DIR)
 SMODOUT = -J$(DLL_DIR)

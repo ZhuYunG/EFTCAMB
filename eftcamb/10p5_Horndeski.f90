@@ -55,6 +55,7 @@ module EFTCAMB_FM_horndeski
         integer  :: interpolation_num_points = 800
         real(dl) :: x_initial = log(1.d-8)
         real(dl) :: x_final   = 0._dl
+        real(dl) :: omegaLambda = 0._dl
 
         !-----------------------------
         ! 模型选择：Omega(a)、Lambda(a) 的参数化类型
@@ -234,6 +235,10 @@ contains
             deallocate( temp )
         end if
 
+        ! ---------- 额外常数 omegade ----------
+        self%omegaLambda    = array(num_params_temp)
+        num_params_temp = num_params_temp + 1
+
         ! ---------- 安全检查 ----------
         if ( num_params_temp-1 /= self%parameter_number ) then
             write(*,*) 'In EFTCAMBHorndeskiInitModelParameters:'
@@ -264,6 +269,9 @@ contains
             call self%Lambda%init_from_file( Ini )
         end if
 
+       ! 读入额外的常数 omegaLambda
+        self%omegaLambda = Ini_Read_Double_File( Ini, 'omegaLambda', 0.7_dl)
+
     end subroutine EFTCAMBHorndeskiInitModelParametersFromFile
 
     !> 计算 Horndeski 模型总共有多少个参数
@@ -280,6 +288,8 @@ contains
 
         if ( self%Lambda_model > 0 ) &
             self%parameter_number = self%parameter_number + self%Lambda%parameter_number
+
+        self%parameter_number = self%parameter_number + 1
 
     end subroutine EFTCAMBHorndeskiComputeParametersNumber
 
@@ -350,6 +360,12 @@ contains
             call MpiStop('EFTCAMB error')
         end if
 
+        ! omegade 固定放在最后一个槽
+        if ( i == self%parameter_number ) then
+            name = 'omegaLambda'
+            return
+        end if
+
         ! 来自 Ω(a)
         if ( self%Omega_model > 0 .and. i <= NOmega ) then
             do j = 1, self%Omega%parameter_number
@@ -397,6 +413,13 @@ contains
             write(*,'(a,I3)') 'Total number of parameters is ', self%parameter_number
             call MpiStop('EFTCAMB error')
         end if
+
+
+        if ( i == self%parameter_number ) then
+            latexname = '\Omega_{\rm Lambda}'
+            return
+        end if
+
 
         !----------------------------------------------------------
         ! 3) 来自 Omega(a) 的参数
@@ -448,6 +471,11 @@ contains
             write(*,'(a,I3)') 'EFTCAMB error: no parameter corresponding to number ', i
             write(*,'(a,I3)') 'Total number of parameters is ', self%parameter_number
             call MpiStop('EFTCAMB error')
+        end if
+
+        if ( i == self%parameter_number ) then
+            value = self%omegaLambda
+            return
         end if
 
         !----------------------------------
@@ -505,8 +533,8 @@ contains
     real(dl) :: H2, Hdot
     real(dl) :: Omega, Omegap, Omegapp
     real(dl) :: Lambda_a2, Lambda_a2_prime, LLambda
-    real(dl) :: Lambda, Lambda_prime
-    real(dl) :: ca2_over_m0sq, cdot_a2_over_m0sq
+    real(dl) :: Lambda, Lambda_prime, LLambda_prime, LLambda_dot
+    real(dl) :: ca2_over_m0sq, cdot_a2_over_m0sq, cdot
     real(dl) :: dOmega_dN, dOmegap_dN, d_factor_dN
     real(dl) :: drho_ma2_dN, dLambda_a2_dN, dC_dN
     real(dl) :: omega_r_t, omega_m_t, omega_nu_t, omega_DE_t, omega_tot_t
@@ -534,7 +562,7 @@ contains
 
     success            = .True.
     H02                = H2_ini
-    Acrit              = 1.d-4    ! 运行时兜底阈值：|A| < Acrit 认为接近奇点
+    Acrit              = 1.d-8    ! 运行时兜底阈值：|A| < Acrit 认为接近奇点
     Amin_grid          = 1.d-3    ! 预检查阈值：网格上 |A| 必须都 > Amin_grid
     hit_A_singularity  = .False.
 
@@ -676,14 +704,14 @@ contains
         end if
 
         ! 再检查一下是否在 derivs 中触发了 A 奇点标记
-        ! if ( hit_A_singularity ) then
-        !     if ( DebugEFTCAMB ) then
-        !         write(*,'(a,3es15.6)') 'Horndeski: Acoef too small during integration, t1,t2,A = ', t1, t2, Acoef
-        !         close(unit_bg)
-        !     end if
-        !     success = .False.
-        !     return
-        ! end if
+        if ( hit_A_singularity ) then
+            if ( DebugEFTCAMB ) then
+                write(*,'(a,3es15.6)') 'Horndeski: Acoef too small during integration, t1,t2,A = ', t1, t2, Acoef
+                close(unit_bg)
+            end if
+            success = .False.
+            return
+        end if
 
         ! 写入更早一个网格点 i-1 的 EFT 表
         if ( .not. loc_only_solve ) then
@@ -762,7 +790,7 @@ contains
             end if
 
             grho_matter  = grhob_t + grhoc_t + grhor_t + grhog_t + grhonu_tot
-            gpres_matter = gpinu_tot + (grhog_t + grhor_t)/3._dl
+            gpres_matter = gpinu_tot + (grhog_t + grhor_t)/3._dl ! P_m a^2 / m0^2
 
             ! 2) EFT function Omega(a) and derivatives w.r.t a
             Omega   = self%Omega%value(a)
@@ -772,7 +800,7 @@ contains
             ! 3) Lambda(a): 我们用组合形式 Λ(a)a^2/m0^2 存在 self%Lambda%value 里
             Lambda       = self%Lambda%value(a)
             Lambda_prime = self%Lambda%first_derivative(a)  ! d/da(Λ a^2 / m0^2)，供 output 用
-            LLambda = -3._dl * 0.7 * H2_ini * (1 + Lambda) * a2
+            LLambda = -3._dl * self%omegaLambda * H2_ini * (1 + Lambda) * a2 ! Lambda a^2 / m0^2
 
             Lambda_a2 = (kappa / (c**2)) * Lambda * a2 * Mpc**2
             Lambda_a2_prime = (kappa / (c**2)) * Mpc**2 * ( 2._dl*a*Lambda + a2*Lambda_prime )
@@ -780,24 +808,20 @@ contains
             ! 4) 系数 A,B,C in eq. (2)
             Acoef = 1._dl + Omega + 0.5_dl * a * Omegap
             Bcoef = 1._dl + Omega + 2._dl*a*Omegap + a2*Omegapp
-            Pm_a2_over_m0sq = gpres_matter                   ! P_m a^2 / m0^2
             Cterm = gpres_matter + LLambda              ! C ≡ P_m a^2/m0^2 + Λ a^2/m0^2
 
             H2 = y(1)
 
             ! eq.(2): A dH^2/dN + B H^2 + C = 0
             ! --------- A 保护逻辑（新加） ----------
-            ! if ( abs(Acoef) < Acrit ) then
-            !     ! 接近奇点：打标记，给一个温和导数避免 NaN
-            !     hit_A_singularity = .True.
-            !     ydot(1) = 0._dl
-            !     Hdot    = 0._dl
-            !     return
-            ! else
+            if ( abs(Acoef) < Acrit ) then
+                hit_A_singularity = .True.
+                call MpiStop('Horndeski: |Acoef| < Acrit, aborting background integration')
+            else
                 ydot(1) = -( Bcoef*H2 + Cterm ) / Acoef
                 ! conformal-time derivative of \mathcal{H}: 这里 Hdot = 0.5 dH^2/dN
                 Hdot    = 0.5_dl*ydot(1)
-            ! end if
+            end if
 
         end subroutine derivs
 
@@ -856,7 +880,7 @@ contains
         real(dl) :: c_real
         real(dl) :: c_real_dot
         real(dl) :: pref_m0_over_a2
-        real(dl) :: H_phys
+        real(dl) :: H_phys, H
         real(dl) :: Lambda_dot
 
         ! Make sure all background quantities are set at this (x,y):
@@ -873,7 +897,8 @@ contains
         ! 裸的 Lambda(a) 及其对 a 的导数
         Lambda       = self%Lambda%value(a)
         Lambda_prime = self%Lambda%first_derivative(a)
-        LLambda = -3._dl * 0.7 * H2_ini * (1 + Lambda) * a2
+        LLambda = -3._dl * self%omegaLambda * H2_ini * (1 + Lambda) * a2
+        LLambda_prime = -3._dl * self%omegaLambda * H2_ini * Lambda_prime * a2
 
         ! Λ a^2 / m0^2 = (kappa/c^2) Λ a^2 * Mpc^2
         Lambda_a2 = (kappa / (c**2)) * Lambda * a2 * Mpc**2
@@ -896,29 +921,18 @@ contains
 
         if ( H2 > 0._dl ) then
 
-            ! d/dN(1+Ω+aΩ') = 2 a Ω' + a^2 Ω''
-            dOmega_dN   = a * Omegap
-            dOmegap_dN  = a * Omegapp
-            d_factor_dN = 2._dl*a*Omegap + a2*Omegapp
+            H = sqrt(H2)
 
-            ! ρ_m a^2 obeys: d(ρ_m a^2)/dN = -(ρ_m a^2 + 3 P_m a^2)
-            drho_ma2_dN = -( grho_matter + 3._dl*gpres_matter )
+            ! 以下求cdot表达式, 实际上是cdot a^2 / m0^2
+            cdot = 1.5_dl * H * (a * H2 * (2 * Omegap + a * Omegapp) + 2 * (1 + Omega + a * Omegap) * (Hdot - H2)) &
+                    + 0.5_dl * H * a * LLambda_prime &
+                    + 1.5_dl * H * (grho_matter + gpres_matter)
 
-            ! Λ a^2 / m0^2:
-            dLambda_a2_dN = a * Lambda_a2_prime
+            LLambda_dot = -3._dl * self%omegaLambda * H2_ini * Lambda_prime * a2 * a * H
 
-            ! dy/dN is ydot(1):
-            ! dC/dN, where C ≡ ca^2/m0^2
-            dC_dN = 1.5_dl * ( 1._dl + Omega + a*Omegap ) * ydot(1) &
-                    + 1.5_dl * H2 * d_factor_dN &
-                    - 0.5_dl * drho_ma2_dN &
-                    + 0.5_dl * dLambda_a2_dN
-
-            ! convert to conformal time derivative: d/dη = 𝓗 d/dN
-            cdot_a2_over_m0sq      = sqrt(H2) * dC_dN
             ! Λdot a^2 / m0^2
-            self%EFTc%yp(ind)      = cdot_a2_over_m0sq
-            self%EFTLambda%yp(ind) = sqrt(H2) * dLambda_a2_dN
+            self%EFTc%yp(ind)      = cdot
+            self%EFTLambda%yp(ind) = LLambda_dot
 
         else
             self%EFTc%yp(ind)      = double_NaN
@@ -946,7 +960,7 @@ contains
         rhoDE_real = pref_m0_over_a2 * rhoDE_hat
         pDE_real   = pref_m0_over_a2 * pDE_hat
 
-        ! 真实的 c(a)
+
         ! --- 先算 Ω_DE，用帽子量（始终应该是 well-defined，只要 H2>0） ---
         if ( H2 > 0._dl ) then
             OmegaDE_here = rhoDE_hat / (3._dl*H2)
@@ -1001,151 +1015,9 @@ contains
 
     end subroutine EFTCAMBHorndeskiSolveBackgroundEquations
 
-    ! subroutine EFTCAMBHorndeskiSolveBackgroundEquations( self, params_cache, H2_ini, H02, only_solve, success ) 
-    !     implicit none 
-    !     class(EFTCAMB_Horndeski) :: self !< the base class 
-    !     type(EFTCAMB_parameter_cache), intent(in):: params_cache !< cosmological background parameters 
-    !     real(dl), intent(in) :: H2_ini !< initial value of y = H^2 at x_initial = self%EFTc%x(1) 
-    !     real(dl), intent(out) :: H02 !< value of H^2 today (a=1) 
-    !     logical, optional :: only_solve !< if .true. only solves for H^2, no EFT tables 
-    !     logical, intent(out) :: success !< whether the integration completed successfully 
-        
-    !     ! ODE system size: here we only evolve y = H^2 
-    !     integer, parameter :: num_eq = 1 
-    !     real(dl) :: y(num_eq), ydot(num_eq) 
-        
-    !     ! odepack quantities: 
-    !     integer :: itol, itask, istate, iopt, LRN, LRS, LRW, LIS, LIN, LIW, JacobianMode, i 
-    !     real(dl) :: rtol, atol, t1, t2, t2_temp 
-    !     real(dl), allocatable :: rwork(:) 
-    !     integer , allocatable :: iwork(:) 
-    !     ! background quantities shared between derivs / output: 
-    !     real(dl) :: a, a2 
-    !     real(dl) :: grhob_t, grhoc_t, grhor_t, grhog_t 
-    !     real(dl) :: grhonu_tot, gpinu_tot 
-    !     real(dl) :: grhonu, gpinu, grhormass_t 
-    !     real(dl) :: grho_matter, gpres_matter 
-    !     real(dl) :: H2, Hdot 
-    !     real(dl) :: Omega, Omegap, Omegapp 
-    !     real(dl) :: Lambda_a2, Lambda_a2_prime 
-    !     real(dl) :: ca2_over_m0sq, cdot_a2_over_m0sq 
-    !     real(dl) :: dOmega_dN, dOmegap_dN, d_factor_dN 
-    !     real(dl) :: drho_ma2_dN, dLambda_a2_dN, dC_dN 
-    !     real(dl) :: omega_r_t, omega_m_t, omega_nu_t, omega_DE_t, omega_tot_t 
-    !     integer :: nu_i 
-        
-    !     logical :: loc_only_solve 
-    !     ! --------------------------------------------------------------- 
-    !     ! 0) digest the input flags 
-    !     ! --------------------------------------------------------------- 
-    !     if ( present(only_solve) ) then 
-    !         loc_only_solve = only_solve 
-    !     else loc_only_solve = .False. 
-    !     end if 
-    !     ! --------------------------------------------------------------- 
-    !     ! 1) set initial conditions 
-    !     ! --------------------------------------------------------------- 
-    !     ! x-grid is assumed already initialized: self%EFTc%x(1: num_points) 
-    !     t1 = self%EFTc%x(1) 
-    !     y(1) = H2_ini ! y = H^2 at x_initial 
-    !     H02 = 0._dl ! will be set when we cross x=0 
-        
-    !     ! --------------------------------------------------------------- 
-    !     ! 2) Initialize DLSODA as in 5e 
-    !     ! --------------------------------------------------------------- 
-    !     itol = 1 
-    !     rtol = 1.d-10 
-    !     atol = 1.d-14 
-    !     itask = 1 
-    !     istate = 1 
-    !     iopt = 1 
-    !     LRN = 20 + 16*num_eq 
-    !     LRS = 22 + 9*num_eq + num_eq**2 
-    !     LRW = max(LRN, LRS) 
-    !     LIS = 20 + num_eq 
-    !     LIN = 20 
-    !     LIW = max(LIS, LIN) 
-    !     allocate(rwork(LRW)) 
-    !     allocate(iwork(LIW)) 
-    !     ! optional lsoda input: 
-    !     rwork(5) = 0._dl ! initial step size (0 => chosen by solver) 
-    !     rwork(6) = 0._dl ! max step size (0 => infinite) 
-    !     rwork(7) = 0._dl ! min step size (0 => 0) 
-        
-    !     iwork(5) = 0 ! no extra printing 
-    !     iwork(6) = 1000 ! max internal steps per call 
-    !     iwork(7) = 0 ! max warning messages 
-    !     iwork(8) = 0 ! max order Adams 
-    !     iwork(9) = 0 ! max order BDF 
-        
-    !     call XSETF(0) ! suppress odepack printing 
-    !     JacobianMode = 1 ! 1 = full Jacobian provided 
-        
-    !     ! --------------------------------------------------------------- 
-    !     ! 3) store EFT functions at the first grid point (if needed) 
-    !     ! --------------------------------------------------------------- 
-    !     if ( .not. loc_only_solve ) then 
-    !         call output( num_eq, 1, t1, y ) 
-    !     end if 
-        
-    !     ! --------------------------------------------------------------- 
-    !     ! 4) integrate over the x-grid: from x_initial 到 x_final=0 ! 网格最后一个点是 x_final=0 ⇒ a=1，此时 y(1) 就是 H0^2 
-    !     ! --------------------------------------------------------------- 
-    !     do i = 1, self%EFTc%num_points - 1 
-    !         t1 = self%EFTc%x(i) 
-    !         t2 = self%EFTc%x(i+1) 
-            
-    !         call DLSODA( derivs, num_eq, y, t1, t2, itol, rtol, atol, & 
-    !                 itask, istate, iopt, rwork, LRW, iwork, LIW, jacobian, JacobianMode ) 
-                    
-    !         ! 检查 LSODA 状态 
-    !         if ( istate < 0 ) then 
-    !             if ( istate == -1 ) then 
-    !                 ! -1: 需要更多步，重置一下继续 
-    !                 if ( DebugEFTCAMB ) then 
-    !                     write(*,'(a,i4,2es15.6)') & 
-    !                         'Horndeski LSODA istate=-1, t1, t2 = ', istate, t1, t2 
-    !                 end if 
-    !                 istate = 1 
-    !             else 
-    !                 ! 其它负值：真正的错误 
-    !                 if ( DebugEFTCAMB ) then 
-    !                     write(*,'(a,i4,2es15.6)') & 
-    !                         'Horndeski LSODA ERROR, istate, t1, t2 = ', istate, t1, t2 
-    !                     end if 
-    !                     success = .False. 
-    !                     return 
-    !                 end if 
-    !             end if 
-                
-    !             ! 存 EFT 函数表（only_solve=.True. 时就不要写表） 
-    !             if ( .not. loc_only_solve ) then 
-    !                 call output( num_eq, i+1, t2, y ) 
-    !             end if 
-    !         end do 
-            
-    !         ! --------------------------------------------------------------- 
-    !         ! 5) 成功结束：最后一个点 t2 = x_final = 0 ⇒ a=1 ! 所以这里的 y(1) 就是今天的 H0^2 
-    !         ! --------------------------------------------------------------- 
-    !         H02 = y(1) 
-    !         success = .True. 
-            
-    !         ! --------------------------------------------------------------- 
-    !         ! 5) success flag 
-    !         ! --------------------------------------------------------------- 
-    !         if ( H02 /= 0._dl ) then 
-    !             success = .True. 
-    !         else 
-    !             success = .False. 
-    !         end if 
-            
-    !         return 
-            
-    !     contains 
-        
-        ! ================================================================= !> RHS: dy/dx for Horndeski background, x = ln a, y = H^2 subroutine derivs( num_eq, x, y, ydot ) implicit none integer , intent(in) :: num_eq real(dl), intent(in) :: x real(dl), intent(in) , dimension(num_eq) :: y real(dl), intent(out), dimension(num_eq) :: ydot real(dl) :: Pm_a2_over_m0sq real(dl) :: Acoef, Bcoef ! 0) x -> a a = exp(x) a2 = a*a ! 1) compute background densities (same as 5e) grhob_t = params_cache%grhob/a grhoc_t = params_cache%grhoc/a grhor_t = params_cache%grhornomass/a2 grhog_t = params_cache%grhog/a2 grhonu_tot = 0._dl gpinu_tot = 0._dl if ( params_cache%Num_Nu_Massive /= 0 ) then do nu_i = 1, params_cache%Nu_mass_eigenstates grhonu = 0._dl gpinu = 0._dl grhormass_t = params_cache%grhormass(nu_i)/a2 call params_cache%Nu_background( a*params_cache%nu_masses(nu_i), grhonu, gpinu ) grhonu_tot = grhonu_tot + grhormass_t*grhonu gpinu_tot = gpinu_tot + grhormass_t*gpinu end do end if grho_matter = grhob_t + grhoc_t + grhor_t + grhog_t + grhonu_tot gpres_matter = gpinu_tot + (grhog_t + grhor_t)/3._dl ! 2) EFT function Omega(a) and derivatives w.r.t a Omega = self%Omega%value(a) Omegap = self%Omega%first_derivative(a) ! dΩ/da Omegapp = self%Omega%second_derivative(a) ! d²Ω/da² ! 3) Lambda(a): we define Lambda%value(a) = Λ(a) a^2 / m0^2 Lambda_a2 = self%Lambda%value(a) Lambda_a2_prime = self%Lambda%first_derivative(a) ! d/da(Λ a^2 / m0^2) ! 4) coefficients in eq. (2) Acoef = 1._dl + Omega + 0.5_dl * a * Omegap Bcoef = 1._dl + Omega + 2._dl*a*Omegap + a2*Omegapp Pm_a2_over_m0sq = gpres_matter ! notation: P_m a^2 / m0^2 H2 = y(1) ! eq.(2): (1+Ω+½ a Ω') dy/d ln a + (1+Ω+2aΩ'+a^2Ω'') y + (P_m a^2/m0^2 + Λ a^2/m0^2) = 0 if ( abs(Acoef) < 1.d-20 ) then ! extremely pathological, avoid division by zero ydot(1) = 0._dl else ydot(1) = -( Bcoef*H2 + (Pm_a2_over_m0sq + Lambda_a2) ) / Acoef end if ! conformal-time derivative of \mathcal{H}: \dot{\mathcal{H}} = (1/2) dH^2/dN Hdot = 0.5_dl*ydot(1) end subroutine derivs ! ================================================================= !> Jacobian matrix ∂(dy/dx)/∂y, needed by DLSODA subroutine jacobian( num_eq, x, y, ml, mu, pd, nrowpd ) implicit none integer :: num_eq, ml, mu, nrowpd real(dl) :: x real(dl), dimension(num_eq) :: y real(dl), dimension(nrowpd,num_eq) :: pd real(dl) :: Acoef, Bcoef, dummy(1) ! recompute coefficients at this (x,y) call derivs( num_eq, x, y, dummy ) ! Acoef, Bcoef, H2 have been set by derivs Acoef = 1._dl + Omega + 0.5_dl * exp(x) * Omegap Bcoef = 1._dl + Omega + 2._dl*exp(x)*Omegap + (exp(2*x))*Omegapp H2 = y(1) ! dy/dx = -(B y + C)/A => ∂(dy/dx)/∂y = -(B)/A if ( abs(Acoef) < 1.d-20 ) then pd(1,1) = 0._dl else pd(1,1) = -Bcoef / Acoef end if end subroutine jacobian ! ================================================================= !> Take the solution y=H^2 and compute EFT functions c(a), Lambda(a) !! and some auxiliary background quantities. subroutine output( num_eq, ind, x, y ) implicit none integer , intent(in) :: num_eq integer , intent(in) :: ind real(dl), intent(in) :: x real(dl), intent(in) , dimension(num_eq) :: y logical :: is_open ! NEW: local DE quantities real(dl) :: rhoDE_hat, pDE_hat real(dl) :: wDE_here, OmegaDE_here ! Make sure all background quantities are set at this (x,y): call derivs( num_eq, x, y, ydot ) a = exp(x) a2 = a*a H2 = y(1) ! \mathcal{H}^2 ! ---- 1) EFT functions: c and Lambda --------------------------------- ! Lambda(a): as above, we define value = Λ(a) a^2 / m0^2 Lambda_a2 = self%Lambda%value(a) Lambda_a2_prime = self%Lambda%first_derivative(a) ! c(a) via Raiver eq. (2): ! ca^2/m0^2 = 3/2 (1+Ω+aΩ') H^2 - 1/2 ρ_m a^2/m0^2 + 1/2 Λ a^2/m0^2 ca2_over_m0sq = 1.5_dl * ( 1._dl + Omega + a*Omegap ) * H2 & - 0.5_dl * grho_matter & + 0.5_dl * Lambda_a2 ! store background values: self%EFTc%y(ind) = ca2_over_m0sq self%EFTLambda%y(ind) = Lambda_a2 ! ---- 2) time derivatives c_dot and Lambda_dot ----------------------- if ( H2 > 0._dl ) then ! d/dN(1+Ω+aΩ') = 2 a Ω' + a^2 Ω'' dOmega_dN = a * Omegap dOmegap_dN = a * Omegapp d_factor_dN = 2._dl*a*Omegap + a2*Omegapp ! ρ_m a^2 obeys: d(ρ_m a^2)/dN = -(ρ_m a^2 + 3 P_m a^2) drho_ma2_dN = -( grho_matter + 3._dl*gpres_matter ) ! Λ a^2 / m0^2: dLambda_a2_dN = a * Lambda_a2_prime ! dy/dN is ydot(1): ! dC/dN, where C ≡ ca^2/m0^2 dC_dN = 1.5_dl * ( 1._dl + Omega + a*Omegap ) * ydot(1) & + 1.5_dl * H2 * d_factor_dN & - 0.5_dl * drho_ma2_dN & + 0.5_dl * dLambda_a2_dN ! convert to conformal time derivative: d/dη = 𝓗 d/dN cdot_a2_over_m0sq = sqrt(H2) * dC_dN ! Λdot a^2 / m0^2 self%EFTc%yp(ind) = cdot_a2_over_m0sq self%EFTLambda%yp(ind) = sqrt(H2) * dLambda_a2_dN else self%EFTc%yp(ind) = double_NaN self%EFTLambda%yp(ind) = double_NaN end if ! ---- 3) standard Ω_i for debugging ---------------------------------- omega_r_t = (grhog_t + grhor_t)/(3._dl*H2) omega_m_t = (grhob_t + grhoc_t)/(3._dl*H2) omega_nu_t = grhonu_tot/(3._dl*H2) omega_DE_t = (3._dl*H2 - (grhog_t + grhor_t + grhob_t + grhoc_t + grhonu_tot)) / (3._dl*H2) omega_tot_t= omega_r_t + omega_m_t + omega_nu_t + omega_DE_t ! ---- 4) effective DE density, pressure, w_DE, Omega_DE -------------- ! NEW ! hatted densities: ρ̂_DE = 3H2 - ρ̂_matter rhoDE_hat = 3._dl*H2 - grho_matter ! hatted pressures: P̂_DE = -2 Ḣ - H2 - P̂_matter ! 注意：Hdot 在 derivs 里定义为 Ḣ ≡ d𝓗/dη pDE_hat = -2._dl*Hdot - H2 - gpres_matter if ( abs(rhoDE_hat) > 1.d-20 .and. H2 > 0._dl ) then wDE_here = pDE_hat / rhoDE_hat OmegaDE_here = rhoDE_hat / (3._dl*H2) else wDE_here = double_NaN OmegaDE_here = double_NaN end if ! 存到 type 里的数组中： if ( allocated(self%H2) ) self%H2(ind) = H2 if ( allocated(self%wDE) ) self%wDE(ind) = wDE_here if ( allocated(self%OmegaDE) ) self%OmegaDE(ind) = OmegaDE_here ! ---- 5) debug 输出 --------------------------------------------------- if ( DebugEFTCAMB ) then inquire( unit=33, opened=is_open ) if ( is_open ) then ! 顺序要和你在 InitBackground 里写的 header 对上 write(33,'(200ES15.4E3)') x, a, 1._dl/a-1._dl, H2, Hdot, & grho_matter, gpres_matter, Omega, Omegap, Omegapp, & ca2_over_m0sq, Lambda_a2, omega_r_t, omega_m_t, omega_nu_t, & omega_DE_t, omega_tot_t, wDE_here, OmegaDE_here end if end if end subroutine output end subroutine EFTCAMBHorndeskiSolveBackgroundEquation
 
-    !> Subroutine that initializes the background of the Horndeski model
+
+    !> Subroutine that initializes the background of the Horndeski model, shooting method
 !     subroutine EFTCAMBHorndeskiInitBackground( self, params_cache, feedback_level, success, outroot )
 
 !     implicit none
@@ -1470,16 +1342,14 @@ contains
     if ( allocated(self%H2) )      deallocate(self%H2)
     if ( allocated(self%wDE) )     deallocate(self%wDE)
     if ( allocated(self%OmegaDE) ) deallocate(self%OmegaDE)
-
-    allocate(self%H2     ( self%EFTc%num_points ))
-    allocate(self%wDE    ( self%EFTc%num_points ))
-    allocate(self%OmegaDE( self%EFTc%num_points ))
-
     if (allocated(self%Hphys)) deallocate(self%Hphys)
     if (allocated(self%rhoDE)) deallocate(self%rhoDE)
     if (allocated(self%pDE))   deallocate(self%pDE)
     if (allocated(self%cEFT))  deallocate(self%cEFT)
 
+    allocate(self%H2     ( self%EFTc%num_points ))
+    allocate(self%wDE    ( self%EFTc%num_points ))
+    allocate(self%OmegaDE( self%EFTc%num_points ))
     allocate(self%Hphys( self%EFTc%num_points ))
     allocate(self%rhoDE( self%EFTc%num_points ))
     allocate(self%pDE( self%EFTc%num_points ))
@@ -1571,7 +1441,7 @@ contains
 
 
 
-        !-----------------------------------------------------------------
+    !-----------------------------------------------------------------
     !> 背景 EFT 函数：给定尺度因子 a，返回 c(a), Lambda(a) 以及它们的 dot，
     !!  并计算 EFTOmega 及其导数。
     !-----------------------------------------------------------------
@@ -1608,9 +1478,8 @@ contains
         call self%EFTc%precompute( x, ind, mu )
 
         !---------------------------------------------------------------
-        ! 3) 从预计算的样条表中插值出 “裸”的 c(a), Lambda(a) 以及它们的 dot
-        !    注意：现在表里存的是 c(a)（维度 m0^2）和 Λ(a)（维度同 Λ），
-        !    以及它们的共形时间导数，均未乘 a^2/m0^2。
+        ! 3) 从预计算的样条表中插值出 c(a), Lambda(a) 以及它们的 dot
+        !    注意：现在表里存的 c(a) 和 Λ(a)以及它们的共形时间导数，已乘 a^2/m0^2。
         !---------------------------------------------------------------
         eft_cache%EFTc         = self%EFTc%value(      x, index=ind, coeff=mu )
         eft_cache%EFTLambda    = self%EFTLambda%value( x, index=ind, coeff=mu )
@@ -1619,7 +1488,7 @@ contains
 
         !---------------------------------------------------------------
         ! 4) Horndeski 路径下，Omega 本身就是解析给定的 EFT 函数，
-        !    这里统一在 a_eff 上评估 Ω 及其导数，保证和背景解使用同一 a 。
+        !    这里统一在 a_eff 上评估 Ω 及其导数，保证和背景解使用同一 a 
         !---------------------------------------------------------------
         eft_cache%EFTOmegaV   = self%Omega%value(            a_eff )
         eft_cache%EFTOmegaP   = self%Omega%first_derivative( a_eff )  ! dΩ/da
