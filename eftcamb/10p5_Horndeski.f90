@@ -235,7 +235,7 @@ contains
             deallocate( temp )
         end if
 
-        ! ---------- 额外常数 omegade ----------
+        ! ---------- 额外常数 omegaLambda ----------
         self%omegaLambda    = array(num_params_temp)
         num_params_temp = num_params_temp + 1
 
@@ -886,7 +886,7 @@ contains
         ! Make sure all background quantities are set at this (x,y):
         call derivs( num_eq, x, y, ydot )
 
-        pref_m0_over_a2 = c**2 / (kappa * Mpc**2 * a2)
+        pref_m0_over_a2 = c**2 / (kappa * a2)
 
         a  = exp(x)
         a2 = a*a
@@ -901,11 +901,11 @@ contains
         LLambda_prime = -3._dl * self%omegaLambda * H2_ini * Lambda_prime * a2
 
         ! Λ a^2 / m0^2 = (kappa/c^2) Λ a^2 * Mpc^2
-        Lambda_a2 = (kappa / (c**2)) * Lambda * a2 * Mpc**2
+        ! Lambda_a2 = (kappa / (c**2)) * Lambda * a2 * Mpc**2
 
         ! d/da [ (kappa/c^2) Λ a^2 Mpc^2 ]
         ! = (kappa/c^2) Mpc^2 (2 a Λ + a^2 Λ')
-        Lambda_a2_prime = (kappa / (c**2)) * Mpc**2 * ( a2*Lambda_prime )
+        ! Lambda_a2_prime = (kappa / (c**2)) * Mpc**2 * ( a2*Lambda_prime )
 
         ! c(a) via Raveri eq. (2):
         ! ca^2/m0^2 = 3/2 (1+Ω+aΩ') H^2 - 1/2 ρ_m a^2/m0^2 + 1/2 Λ a^2/m0^2
@@ -969,14 +969,14 @@ contains
         end if
 
         ! --- 再算 w_DE，只在 ρ_DE 不太接近 0 时给出数值 ---
-        if ( H2 > 0._dl .and. abs(rhoDE_hat) > 1.d-16*3._dl*H2 ) then
+        if ( H2 > 0._dl .and. abs(OmegaDE_here) > 1.d-4 ) then
             ! 这里用 rhoDE_hat 做阈值，并且按总密度 3H^2 缩放一下
             wDE_here = pDE_hat / rhoDE_hat
         else
             wDE_here = double_NaN
         end if
 
-        H_phys     = sqrt(H2) / a
+        H_phys = sqrt(H2) / a
 
         if ( allocated(self%Hphys) ) self%Hphys(ind) = H_phys
         if ( allocated(self%rhoDE) ) self%rhoDE(ind) = rhoDE_real
@@ -1475,16 +1475,16 @@ contains
         ! 2) 用 EFTc 的 sampled_function 来做预计算（找到区间和样条系数），
         !    所有 EFT 函数 (c, Lambda) 共用同一条 x 网格。
         !---------------------------------------------------------------
-        call self%EFTc%precompute( x, ind, mu )
+        call self%EFTc%precompute( a_eff, ind, mu )
 
         !---------------------------------------------------------------
         ! 3) 从预计算的样条表中插值出 c(a), Lambda(a) 以及它们的 dot
         !    注意：现在表里存的 c(a) 和 Λ(a)以及它们的共形时间导数，已乘 a^2/m0^2。
         !---------------------------------------------------------------
-        eft_cache%EFTc         = self%EFTc%value(      x, index=ind, coeff=mu )
-        eft_cache%EFTLambda    = self%EFTLambda%value( x, index=ind, coeff=mu )
-        eft_cache%EFTcdot      = self%EFTc%first_derivative(      x, index=ind, coeff=mu )
-        eft_cache%EFTLambdadot = self%EFTLambda%first_derivative( x, index=ind, coeff=mu )
+        eft_cache%EFTc         = self%EFTc%value(      a_eff, index=ind, coeff=mu )
+        eft_cache%EFTLambda    = self%EFTLambda%value( a_eff, index=ind, coeff=mu )
+        eft_cache%EFTcdot      = self%EFTc%first_derivative(      a_eff, index=ind, coeff=mu )
+        eft_cache%EFTLambdadot = self%EFTLambda%first_derivative( a_eff, index=ind, coeff=mu )
 
         !---------------------------------------------------------------
         ! 4) Horndeski 路径下，Omega 本身就是解析给定的 EFT 函数，
