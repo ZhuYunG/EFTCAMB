@@ -13,7 +13,7 @@
 !
 !----------------------------------------------------------------------------------------
 
-!> @file 10p4_Horndeski.f90
+!> @file 10p5_Horndeski.f90
 !! This file contains the definition of the Horndeski full mapping model.
 
 !> @author Cheng-Zhi Dou
@@ -67,23 +67,20 @@ module EFTCAMB_FM_horndeski
         integer :: Omega_model  = 0
         integer :: Lambda_model = 0
 
-        ! 注意：这里的父类型请你改成和 5e 里 self%potential 一样的抽象父类
-        ! 例如：class(EFTCAMB_1D_parametrization), allocatable :: Omega, Lambda
+        ! 这里的父类型和 5e 保持一致
         class( parametrized_function_1D ), allocatable :: Omega
         class( parametrized_function_1D ), allocatable :: Lambda
 
         !-----------------------------
         ! 解出来的 EFT 背景函数，在 x 网格上等间隔采样：
         !   EFTc      : c(a) a^2 / m0^2
-        !   EFTLambda : Λ(a) a^2 / m0^2
-        ! 这两个是在 EFTCAMBHorndeskiSolveBackgroundEquations 的 output()
-        ! 里被填充的，在 InitBackground 里用 initialize() 设置网格。
+        !   EFTLambda : \Lambda(a) a^2 / m0^2
+        ! 这两个是在 EFTCAMBHorndeskiSolveBackgroundEquations 的 output()里被填充的，在 InitBackground 里用 initialize() 设置网格.
         !-----------------------------
         type(equispaced_linear_interpolate_function_1D) :: EFTc
         type(equispaced_linear_interpolate_function_1D) :: EFTLambda
 
-        !（可选）将来如果要在整套代码里用到 rho_DE, w_DE，
-        ! 可以把它们加进来并在 output() 里填值：
+        !（可选）将来如果要在整套代码里用到 rho_DE, w_DE, 可以把它们加进来并在 output() 里填值：
         !type(equispaced_linear_interpolate_function_1D) :: rhoDE
         !type(equispaced_linear_interpolate_function_1D) :: wDE
 
@@ -207,7 +204,7 @@ contains
 
         num_params_temp = 1   ! 当前 array 的读指针，从 1 开始
 
-        ! ---------- Ω(a) ----------
+        ! ---------- Omega(a) ----------
         if ( self%Omega_model > 0 ) then
             num_params_function = self%Omega%parameter_number
             allocate( temp(num_params_function) )
@@ -221,7 +218,7 @@ contains
             deallocate( temp )
         end if
 
-        ! ---------- Λ(a) ----------
+        ! ---------- Lambda(a) ----------
         if ( self%Lambda_model > 0 ) then
             num_params_function = self%Lambda%parameter_number
             allocate( temp(num_params_function) )
@@ -251,7 +248,7 @@ contains
     end subroutine EFTCAMBHorndeskiInitModelParameters
 
 
-    !> 从 INI 文件读取本次运行要用的 Ω 和 Λ 的参数值
+    !> 从 ini 文件读取本次运行要用的 Omega 和 Lambda 的参数值
     subroutine EFTCAMBHorndeskiInitModelParametersFromFile( self, Ini )
 
         implicit none
@@ -259,12 +256,12 @@ contains
         class(EFTCAMB_Horndeski) :: self
         type(TIniFile)           :: Ini
 
-        ! Ω(a) 的参数（如果模型号非 0）
+        ! Omega(a) 的参数（如果模型号非 0）
         if ( self%Omega_model > 0 ) then
             call self%Omega%init_from_file( Ini )
         end if
 
-        ! Λ(a) 的参数
+        ! Lambda(a) 的参数
         if ( self%Lambda_model > 0 ) then
             call self%Lambda%init_from_file( Ini )
         end if
@@ -346,7 +343,7 @@ contains
         integer :: NOmega, NLambda
         integer :: j
 
-        ! 累积数量：前 NOmega 个是 Ω，之后的是 Λ
+        ! 累积数量：前 NOmega 个是 Omega，之后的是 Lambda
         NOmega  = 0
         NLambda = 0
 
@@ -366,7 +363,7 @@ contains
             return
         end if
 
-        ! 来自 Ω(a)
+        ! 来自 Omega(a)
         if ( self%Omega_model > 0 .and. i <= NOmega ) then
             do j = 1, self%Omega%parameter_number
                 if ( i == j ) call self%Omega%parameter_names( j, name )
@@ -374,7 +371,7 @@ contains
             return
         end if
 
-        ! 来自 Λ(a)
+        ! 来自 Lambda(a)
         if ( self%Lambda_model > 0 .and. i <= NLambda ) then
             do j = 1, self%Lambda%parameter_number
                 if ( i-NOmega == j ) call self%Lambda%parameter_names( j, name )
@@ -540,7 +537,7 @@ contains
     real(dl) :: omega_r_t, omega_m_t, omega_nu_t, omega_DE_t, omega_tot_t
     integer  :: nu_i
 
-    ! A(a) 相关：方程前面的系数 A = 1 + Ω + 0.5 a Ω'
+    ! A(a) 相关：方程前面的系数 A = 1 + Omega + 0.5 a Omega'
     real(dl) :: Acoef, Bcoef, Cterm
     real(dl) :: Acrit, Amin_grid, Atmp
     logical  :: hit_A_singularity, ok_A
@@ -576,12 +573,12 @@ contains
     end if
 
     ! ---------------------------------------------------------------
-    ! 0.5) 预检查：在整个背景 x-grid 上扫描 A(a)，排除明显不好的 Ω(a)
+    ! 0.5) 预检查：在整个背景 x-grid 上扫描 A(a)，排除明显不好的 Omega(a)
     !
     ! 要求：对所有网格点 i，
     !   |A(a_i)| > Amin_grid
     !
-    ! 你也可以在这里加上 A(a_i) > 0 的条件（ghost-free），看你后面想不想加先验。
+    ! 也可以在这里加上 A(a_i) > 0 的条件（ghost-free），看后面想不想加先验。
     ! ---------------------------------------------------------------
     ok_A = .True.
 
@@ -596,7 +593,7 @@ contains
     !         ok_A = .False.
     !         exit
     !     end if
-    !     ! 如果你想强制 A>0，可以改成：
+    !     ! 如果想强制 A>0，可以改成：
     !     ! if ( Atmp <= 0._dl .or. abs(Atmp) < Amin_grid ) then ...
     ! end do
 
@@ -668,7 +665,7 @@ contains
     ! ---------------------------------------------------------------
     ! 4) 从今天 (a=1, x=0) 向过去积分：
     !    i = num_points, num_points-1, ..., 2
-    !    每一步从 x(i) → x(i-1)
+    !    每一步从 x(i) 到 x(i-1)
     !
     ! 网格要求：self%EFTc%x(:) 单调递增，最后一个点 = 0
     ! 例如：x(1) = ln(a_min), x(num_points) = 0
@@ -745,15 +742,14 @@ contains
 
 
         ! ================================================================
-        ! 下面的 derivs / jacobian / output 三个内部子程序
-        ! 你可以直接沿用之前 Horndeski 版本的内容，不需要改公式。
+        ! 下面为 derivs / jacobian / output 三个内部子程序
         !
         ! 只要它们用了上面声明的共享变量（a, H2, Omega, Lambda_a2, ...）
         ! 并且假设 x = ln a，y(1) = H^2，逻辑就是一致的。
         ! ================================================================
 
 
-                ! =================================================================
+        ! =================================================================
         !> RHS: dy/dx for Horndeski background, x = ln a, y = H^2
         subroutine derivs( num_eq, x, y, ydot )
 
@@ -770,7 +766,7 @@ contains
             a  = exp(x)
             a2 = a*a
 
-            ! 1) compute background densities (完全沿用你原来的 5e / Horndeski 写法)
+            ! 1) compute background densities (完全沿用 5e 的写法)
             grhob_t = params_cache%grhob/a        ! bayron
             grhoc_t = params_cache%grhoc/a        ! cold dark matter
             grhor_t = params_cache%grhornomass/a2 ! massive nu\eutrinos
@@ -794,12 +790,12 @@ contains
 
             ! 2) EFT function Omega(a) and derivatives w.r.t a
             Omega   = self%Omega%value(a)
-            Omegap  = self%Omega%first_derivative(a)   ! dΩ/da
-            Omegapp = self%Omega%second_derivative(a)  ! d²Ω/da²
+            Omegap  = self%Omega%first_derivative(a)   ! d Omega / d a
+            Omegapp = self%Omega%second_derivative(a)  ! d^2 Omega / d a^2
 
-            ! 3) Lambda(a): 我们用组合形式 Λ(a)a^2/m0^2 存在 self%Lambda%value 里
+            ! 3) Lambda(a): 用组合形式 Lambda(a)a^2/m0^2 存在 self%Lambda%value 里
             Lambda       = self%Lambda%value(a)
-            Lambda_prime = self%Lambda%first_derivative(a)  ! d/da(Λ a^2 / m0^2)，供 output 用
+            Lambda_prime = self%Lambda%first_derivative(a)  ! d/da(Lambda a^2 / m0^2)，供 output 用
             LLambda = -3._dl * self%omegaLambda * H2_ini * (1 + Lambda) * a2 ! Lambda a^2 / m0^2
 
             Lambda_a2 = (kappa / (c**2)) * Lambda * a2 * Mpc**2
@@ -808,12 +804,12 @@ contains
             ! 4) 系数 A,B,C in eq. (2)
             Acoef = 1._dl + Omega + 0.5_dl * a * Omegap
             Bcoef = 1._dl + Omega + 2._dl*a*Omegap + a2*Omegapp
-            Cterm = gpres_matter + LLambda              ! C ≡ P_m a^2/m0^2 + Λ a^2/m0^2
+            Cterm = gpres_matter + LLambda              ! C = P_m a^2/m0^2 + Lambda a^2/m0^2
 
             H2 = y(1)
 
             ! eq.(2): A dH^2/dN + B H^2 + C = 0
-            ! --------- A 保护逻辑（新加） ----------
+            ! --------- A 保护逻辑 ----------
             if ( abs(Acoef) < Acrit ) then
                 hit_A_singularity = .True.
                 call MpiStop('Horndeski: |Acoef| < Acrit, aborting background integration')
@@ -827,7 +823,7 @@ contains
 
 
             ! =================================================================
-        !> Jacobian matrix ∂(dy/dx)/∂y, needed by DLSODA
+        !> Jacobian matrix \partial(dy/dx)/\partial y, needed by DLSODA
         subroutine jacobian( num_eq, x, y, ml, mu, pd, nrowpd )
 
             implicit none
@@ -842,14 +838,13 @@ contains
             ! 在当前 (x,y) 调用一下 derivs，确保 Acoef,Bcoef,H2 等已经更新
             call derivs( num_eq, x, y, dummy )
 
-            ! 如果已经标记了 A 奇点，那这个 Jacobian 基本也没用了，置零就行，
-            ! 上层会根据 hit_A_singularity 直接退出。
+            ! 如果已经标记了 A 奇点，那这个 Jacobian 基本也没用了, 置零就行, 上层会根据 hit_A_singularity 直接退出。
             if ( hit_A_singularity ) then
                 pd(1,1) = 0._dl
                 return
             end if
 
-            ! 正常情况：dy/dx = -(B y + C)/A => ∂(dy/dx)/∂y = -(B)/A
+            ! 正常情况：dy/dx = -(B y + C)/A => \partial (dy/dx)/\partial y = -(B)/A
             if ( abs(Acoef) < 1.d-20 ) then
                 pd(1,1) = 0._dl
             else
@@ -873,7 +868,7 @@ contains
 
         logical :: is_open
 
-        ! DE 相关量（帽子 + 真实）
+        ! DE 相关量（组合 + 真实）
         real(dl) :: rhoDE_hat, pDE_hat
         real(dl) :: wDE_here, OmegaDE_here
         real(dl) :: rhoDE_real, pDE_real
@@ -900,20 +895,20 @@ contains
         LLambda = -3._dl * self%omegaLambda * H2_ini * (1 + Lambda) * a2
         LLambda_prime = -3._dl * self%omegaLambda * H2_ini * Lambda_prime * a2
 
-        ! Λ a^2 / m0^2 = (kappa/c^2) Λ a^2 * Mpc^2
+        ! Lambda a^2 / m0^2 = (kappa/c^2) Lambda a^2 * Mpc^2
         ! Lambda_a2 = (kappa / (c**2)) * Lambda * a2 * Mpc**2
 
-        ! d/da [ (kappa/c^2) Λ a^2 Mpc^2 ]
-        ! = (kappa/c^2) Mpc^2 (2 a Λ + a^2 Λ')
+        ! d/da [ (kappa/c^2) Lambda a^2 Mpc^2 ]
+        ! = (kappa/c^2) Mpc^2 (2 a Lambda + a^2 Lambda')
         ! Lambda_a2_prime = (kappa / (c**2)) * Mpc**2 * ( a2*Lambda_prime )
 
         ! c(a) via Raveri eq. (2):
-        ! ca^2/m0^2 = 3/2 (1+Ω+aΩ') H^2 - 1/2 ρ_m a^2/m0^2 + 1/2 Λ a^2/m0^2
+        ! ca^2/m0^2 = 3/2 (1+Omega+aOmega') H^2 - 1/2 rho_m a^2/m0^2 + 1/2 Lambda a^2/m0^2
         ca2_over_m0sq = 1.5_dl * ( 1._dl + Omega + a*Omegap ) * H2 &
                         - 0.5_dl * grho_matter &
                         + 0.5_dl * LLambda
 
-        ! 存 EFT 表：这里仍然是帽子量 c a^2/m0^2 和 Λ a^2/m0^2
+        ! 存 EFT 表：这里仍然是组合量 c a^2/m0^2 和 Lambda a^2/m0^2
         self%EFTc%y(ind)      = ca2_over_m0sq
         self%EFTLambda%y(ind) = LLambda
 
@@ -930,7 +925,7 @@ contains
 
             LLambda_dot = -3._dl * self%omegaLambda * H2_ini * Lambda_prime * a2 * a * H
 
-            ! Λdot a^2 / m0^2
+            ! Lambdadot a^2 / m0^2
             self%EFTc%yp(ind)      = cdot
             self%EFTLambda%yp(ind) = LLambda_dot
 
@@ -939,7 +934,7 @@ contains
             self%EFTLambda%yp(ind) = double_NaN
         end if
 
-        ! ---- 3) standard Ω_i for debugging ----------------------------------
+        ! ---- 3) standard Omega_i for debugging ----------------------------------
         omega_r_t  = (grhog_t + grhor_t)/(3._dl*H2)
         omega_m_t  = (grhob_t + grhoc_t)/(3._dl*H2)
         omega_nu_t =  grhonu_tot/(3._dl*H2)
@@ -948,11 +943,11 @@ contains
 
         ! ---- 4) effective DE density, pressure, w_DE, rho_DE (真实) ----------
 
-        ! 帽子密度:  ρ̂_DE = 3 H^2 - ρ̂_matter
+        ! 组合密度:  rho_DE a^2 / m0^2 = 3 H^2 - rho_matter a^2 / m0^2
         rhoDE_hat = 3._dl*H2 - grho_matter
 
-        ! 帽子压强:  P̂_DE = -2 Ḣ - H^2 - P̂_matter
-        ! 注意：Hdot 在 derivs 里定义为 Ḣ ≡ d𝓗/dη
+        ! 组合压强:  P_DE a^2 / m0^2 = -2 \dot{H} - H^2 - P_matter a^2 / m0^2
+        ! 注意：Hdot 在 derivs 里定义为 Hdot = dH/d eta, 所有的H都对应文中\mathcal{H}
         pDE_hat   = -2._dl*Hdot - H2 - gpres_matter
 
         ! m0^2 / a^2 = c^2 / (kappa * Mpc^2) / a^2
@@ -961,14 +956,14 @@ contains
         pDE_real   = pref_m0_over_a2 * pDE_hat
 
 
-        ! --- 先算 Ω_DE，用帽子量（始终应该是 well-defined，只要 H2>0） ---
+        ! --- 先算 Omega_DE，用组合量（始终应该是 well-defined，只要 H2>0） ---
         if ( H2 > 0._dl ) then
             OmegaDE_here = rhoDE_hat / (3._dl*H2)
         else
             OmegaDE_here = double_NaN
         end if
 
-        ! --- 再算 w_DE，只在 ρ_DE 不太接近 0 时给出数值 ---
+        ! --- 再算 w_DE，只在 rho_DE 不太接近 0 时给出数值 ---
         if ( H2 > 0._dl .and. abs(OmegaDE_here) > 1.d-4 ) then
             ! 这里用 rhoDE_hat 做阈值，并且按总密度 3H^2 缩放一下
             wDE_here = pDE_hat / rhoDE_hat
@@ -986,7 +981,7 @@ contains
         if ( allocated(self%H2) )      self%H2(ind)      = H2
         if ( allocated(self%wDE) )     self%wDE(ind)     = wDE_here
         if ( allocated(self%OmegaDE) ) self%OmegaDE(ind) = OmegaDE_here
-        ! 如果你在 type 里另外加了真实的 rhoDE/c 数组，可以在这里写：
+        ! 如果在 type 里另外加了真实的 rhoDE/c 数组，以下可选：
         ! if ( allocated(self%rhoDE) ) self%rhoDE(ind) = rhoDE_real
         ! if ( allocated(self%cEFT) )  self%cEFT(ind)  = c_real
 

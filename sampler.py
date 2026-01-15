@@ -26,10 +26,10 @@ TEMPLATE_EFT_INI = CAMB_DIR / "params_EFT.ini"
 TEMPLATE_RUN_INI = CAMB_DIR / "params.ini"
 
 # 每次写入后的 ini 归档目录（可选，可通过外部参数/环境变量覆盖）
-DEFAULT_RUN_INI_ARCHIVE_DIR = Path("/Users/dcz/data/Horndeski_samples/Horndeski_run_inis_py_onlybackground_a00_2")
+DEFAULT_RUN_INI_ARCHIVE_DIR = Path("/Users/dcz/data/Horndeski_samples/Horndeski_run_inis_py_onlybackground_a01_2")
 
 # Horndeski 样本输出目录（可通过外部参数/环境变量覆盖）
-DEFAULT_SAMPLES_DIR = Path("/Users/dcz/data/Horndeski_samples/Horndeski_samples_py_onlybackground_a00_2")
+DEFAULT_SAMPLES_DIR = Path("/Users/dcz/data/Horndeski_samples/Horndeski_samples_py_onlybackground_a01_2")
 
 # 每个样本运行的独立工作目录基路径（可通过外部参数/环境变量覆盖）
 DEFAULT_RUN_WORK_DIR_BASE = Path("/Volumes/My Passport/Horndeski_workdirs_py_1")
