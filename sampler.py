@@ -26,19 +26,22 @@ TEMPLATE_EFT_INI = CAMB_DIR / "params_EFT.ini"
 TEMPLATE_RUN_INI = CAMB_DIR / "params.ini"
 
 # 每次写入后的 ini 归档目录（可选，可通过外部参数/环境变量覆盖）
-DEFAULT_RUN_INI_ARCHIVE_DIR = Path("/Users/dcz/data/Horndeski_samples/Horndeski_run_inis_py_onlybackground_a01_2")
+# DEFAULT_RUN_INI_ARCHIVE_DIR = Path("/Users/dcz/data/Horndeski_samples/Horndeski_run_inis_py_onlybackground_new_Oa01_La00_1")
+DEFAULT_RUN_INI_ARCHIVE_DIR = None
 
 # Horndeski 样本输出目录（可通过外部参数/环境变量覆盖）
-DEFAULT_SAMPLES_DIR = Path("/Users/dcz/data/Horndeski_samples/Horndeski_samples_py_onlybackground_a01_2")
+# DEFAULT_SAMPLES_DIR = Path("/Users/dcz/data/Horndeski_samples/Horndeski_samples_py_onlybackground_a01_5")
+DEFAULT_SAMPLES_DIR = None
 
 # 每个样本运行的独立工作目录基路径（可通过外部参数/环境变量覆盖）
-DEFAULT_RUN_WORK_DIR_BASE = Path("/Volumes/My Passport/Horndeski_workdirs_py_1")
+# DEFAULT_RUN_WORK_DIR_BASE = Path("/Volumes/My Passport/Horndeski_workdirs_py_1")
+DEFAULT_RUN_WORK_DIR_BASE = None
 
 # ./camb 可执行文件名（如果在 CAMB_DIR 下）
 CAMB_EXE = CAMB_DIR / "camb"
 
 # 采样次数
-N_SAMPLES = 250000
+N_SAMPLES = 1000
 
 # 单个样本 CAMB 运行超时（秒），超过则判为失败
 CAMB_TIMEOUT_SECONDS = 6 * 60
@@ -138,6 +141,11 @@ def parse_args():
         action="store_false",
         help="Disable parallel mode and use legacy sequential behavior."
     )
+    parser.add_argument(
+        "--output-root",
+        default=None,
+        help="Output root prefix for CAMB outputs; also used to name per-process ini files (or set OUTPUT_ROOT)."
+    )
     parser.set_defaults(parallel=None, save_run_ini=None)
     return parser.parse_args()
 
@@ -157,6 +165,15 @@ def resolve_int(cli_value, env_key, default_value):
     env_value = os.environ.get(env_key)
     if env_value:
         return int(env_value)
+    return default_value
+
+
+def resolve_str(cli_value, env_key, default_value=None):
+    if cli_value is not None:
+        return str(cli_value)
+    env_value = os.environ.get(env_key)
+    if env_value is not None:
+        return env_value
     return default_value
 
 
@@ -407,7 +424,7 @@ def update_ini_text(template_text, new_params, file_root):
         stripped = line.strip()
 
         # 注释或空行不动
-        if not stripped or stripped.startswith("#"):
+        if not stripped or stripped.startswith("#") or stripped.startswith(";"):
             out_lines.append(line)
             continue
 
@@ -441,7 +458,7 @@ def update_ini_text(template_text, new_params, file_root):
     return "\n".join(out_lines) + "\n"
 
 
-def update_run_ini_text(template_text, eft_ini_name, highl_template_path):
+def update_run_ini_text(template_text, eft_ini_name, highl_template_path, output_root=None):
     """
     生成 params.ini 的运行版本，确保 DEFAULT(...) 指向本次样本的 EFT ini，
     并固定 highL_unlensed_cl_template 为绝对路径，避免工作目录变更导致找不到模板。
@@ -451,13 +468,15 @@ def update_run_ini_text(template_text, eft_ini_name, highl_template_path):
 
     pat_default = re.compile(r"^\s*DEFAULT\s*\(")
     pat_highl = re.compile(r"^\s*highL_unlensed_cl_template\s*=")
+    pat_output_root = re.compile(r"^\s*output_root\s*=")
 
     default_replaced = False
     highl_replaced = False
+    output_root_replaced = False
 
     for line in lines:
         stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        if not stripped or stripped.startswith("#") or stripped.startswith(";"):
             out_lines.append(line)
             continue
 
@@ -471,6 +490,12 @@ def update_run_ini_text(template_text, eft_ini_name, highl_template_path):
             highl_replaced = True
             continue
 
+        if pat_output_root.match(line):
+            if output_root is not None:
+                out_lines.append(f"output_root = {output_root}")
+                output_root_replaced = True
+                continue
+
         out_lines.append(line)
 
     if not default_replaced:
@@ -479,7 +504,55 @@ def update_run_ini_text(template_text, eft_ini_name, highl_template_path):
     if not highl_replaced:
         out_lines.append(f"highL_unlensed_cl_template = {highl_template_path}")
 
+    if output_root is not None and not output_root_replaced:
+        out_lines.insert(0, f"output_root = {output_root}")
+
     return "\n".join(out_lines) + "\n"
+
+
+def upsert_ini_value(template_text, key, value):
+    pat = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    out_lines = []
+    replaced = False
+    for line in template_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith(";"):
+            out_lines.append(line)
+            continue
+        if pat.match(line):
+            out_lines.append(f"{key} = {value}")
+            replaced = True
+            continue
+        out_lines.append(line)
+    if not replaced:
+        out_lines.insert(0, f"{key} = {value}")
+    return "\n".join(out_lines) + "\n"
+
+
+def prepare_process_ini(output_root, run_template_text, eft_template_text, highl_template_path):
+    """
+    以 output_root 为前缀复制/生成本进程使用的 ini 文件。
+    若目标文件已存在，则直接覆盖写回。
+    """
+    if output_root is None or not str(output_root).strip():
+        raise ValueError("output_root 不能为空，请使用 --output-root 或环境变量 OUTPUT_ROOT")
+    output_root = str(output_root).strip()
+
+    run_ini_path = CAMB_DIR / f"{output_root}_params_origin.ini"
+    eft_ini_path = CAMB_DIR / f"{output_root}_params_EFT.ini"
+
+    eft_text = upsert_ini_value(eft_template_text, "output_root", output_root)
+    eft_ini_path.write_text(eft_text, encoding="utf-8")
+
+    run_text = update_run_ini_text(
+        run_template_text,
+        eft_ini_path.name,
+        highl_template_path,
+        output_root=output_root,
+    )
+    run_ini_path.write_text(run_text, encoding="utf-8")
+
+    return run_ini_path, eft_ini_path
 
 
 def make_run_dir(run_work_base_dir, sample_id):
@@ -528,19 +601,19 @@ def write_run_files(
     return file_root, run_ini_path, eft_ini_path
 
 
-def write_run_ini_inplace(params, sample_id, run_ini_archive_dir, save_run_ini):
+def write_eft_ini_inplace(params, sample_id, eft_ini_path, run_ini_archive_dir, save_run_ini):
     """
-    原始模式：覆盖写回 params_EFT.ini，按需归档一份。
+    覆盖写回指定的 EFT ini（按 output_root 生成的 ini），按需归档一份。
     """
-    if not TEMPLATE_EFT_INI.is_file():
-        raise FileNotFoundError(f"找不到模板 EFT ini: {TEMPLATE_EFT_INI}")
+    if not eft_ini_path.is_file():
+        raise FileNotFoundError(f"找不到 EFT ini: {eft_ini_path}")
 
-    text = TEMPLATE_EFT_INI.read_text(encoding="utf-8")
+    text = eft_ini_path.read_text(encoding="utf-8")
 
     file_root = f"hsamp_{sample_id:05d}"
     new_text = update_ini_text(text, params, file_root)
 
-    TEMPLATE_EFT_INI.write_text(new_text, encoding="utf-8")
+    eft_ini_path.write_text(new_text, encoding="utf-8")
 
     if save_run_ini and run_ini_archive_dir is not None:
         run_ini_archive_dir.mkdir(parents=True, exist_ok=True)
@@ -608,14 +681,17 @@ def run_camb(camb_exe, run_ini_path, work_dir, omp_threads, timeout_seconds=CAMB
 #     shutil.copy2(background_path, target_path)
 #     return target_path
 
-def collect_background(run_dir, sample_id, samples_dir):
+def collect_background(run_dir, sample_id, samples_dir, output_root=None):
     """
-    从固定路径 Horndeski_solution.dat 复制为 Horndeski_sample_{sample_id}.dat
+    从 Horndeski_solution.dat 或 {output_root}_Horndeski_solution.dat 复制为 Horndeski_sample_{sample_id}.dat
     """
     samples_dir.mkdir(parents=True, exist_ok=True)
 
-    # 固定输出文件
-    background_path = run_dir / "Horndeski_solution.dat"
+    if output_root:
+        background_name = f"{output_root}_Horndeski_solution.dat"
+    else:
+        background_name = "Horndeski_solution.dat"
+    background_path = run_dir / background_name
 
     if not background_path.is_file():
         raise FileNotFoundError(f"找不到背景输出文件: {background_path}")
@@ -641,6 +717,7 @@ def run_sample(
     omp_threads,
     sample_log_path,
     sample_log_lock,
+    output_root=None,
 ):
     log_lines = []
     log_lines.append(f"\n=== Sample {sample_index}/{N_SAMPLES} ===")
@@ -692,7 +769,7 @@ def run_sample(
             log_lines.append(f"    {line}")
 
         try:
-            target_path = collect_background(run_dir, sample_id, samples_dir)
+            target_path = collect_background(run_dir, sample_id, samples_dir, output_root=output_root)
             log_lines.append(f"  background saved to {target_path}")
             append_sample_log(
                 sample_log_path,
@@ -739,6 +816,11 @@ def main():
             "RUN_INI_ARCHIVE_DIR",
             DEFAULT_RUN_INI_ARCHIVE_DIR,
         )
+        if run_ini_archive_dir is None:
+            raise ValueError(
+                "未设置 run_ini_archive_dir，请使用 --run-ini-archive-dir、"
+                "环境变量 RUN_INI_ARCHIVE_DIR，或在脚本顶部设置 DEFAULT_RUN_INI_ARCHIVE_DIR。"
+            )
     else:
         run_ini_archive_dir = None
     samples_dir = resolve_dir(
@@ -746,6 +828,11 @@ def main():
         "SAMPLES_DIR",
         DEFAULT_SAMPLES_DIR,
     )
+    if samples_dir is None:
+        raise ValueError(
+            "未设置 samples_dir，请使用 --samples-dir、环境变量 SAMPLES_DIR，"
+            "或在脚本顶部设置 DEFAULT_SAMPLES_DIR。"
+        )
 
     if use_parallel:
         run_work_dir_base = resolve_dir(
@@ -753,6 +840,11 @@ def main():
             "RUN_WORK_DIR_BASE",
             DEFAULT_RUN_WORK_DIR_BASE,
         )
+        if run_work_dir_base is None:
+            raise ValueError(
+                "未设置 run_work_dir_base，请使用 --run-work-dir-base、"
+                "环境变量 RUN_WORK_DIR_BASE，或在脚本顶部设置 DEFAULT_RUN_WORK_DIR_BASE。"
+            )
         default_workers = os.cpu_count() or 1
     else:
         run_work_dir_base = None
@@ -783,6 +875,12 @@ def main():
     if not TEMPLATE_RUN_INI.is_file():
         raise FileNotFoundError(f"找不到模板运行 ini: {TEMPLATE_RUN_INI}")
 
+    output_root = None
+    if not use_parallel:
+        output_root = resolve_str(args.output_root, "OUTPUT_ROOT", None)
+        if output_root is None or not str(output_root).strip():
+            raise ValueError("未设置 output_root，请使用 --output-root 或环境变量 OUTPUT_ROOT。")
+
     print(f"Working dir: {CAMB_DIR}")
     print(f"Template EFT ini: {TEMPLATE_EFT_INI}")
     print(f"Template run ini: {TEMPLATE_RUN_INI}")
@@ -794,6 +892,8 @@ def main():
     print(f"Parallel enabled: {use_parallel}")
     if use_parallel:
         print(f"Run work dir base: {run_work_dir_base}")
+    else:
+        print(f"Output root: {output_root}")
     print(f"Max workers: {max_workers}")
     print(f"OMP threads: {omp_threads}")
     print(f"Total samples: {N_SAMPLES}")
@@ -896,6 +996,18 @@ def main():
                 executor.shutdown(wait=False, cancel_futures=True)
                 return
     else:
+        highl_template_path = CAMB_DIR / "HighLExtrapTemplate_lenspotentialCls.dat"
+        if not highl_template_path.is_file():
+            raise FileNotFoundError(f"找不到 HighL 模板文件: {highl_template_path}")
+
+        eft_template_text = TEMPLATE_EFT_INI.read_text(encoding="utf-8")
+        run_template_text = TEMPLATE_RUN_INI.read_text(encoding="utf-8")
+        run_ini_path, eft_ini_path = prepare_process_ini(
+            output_root,
+            run_template_text,
+            eft_template_text,
+            highl_template_path,
+        )
         try:
             for offset in range(N_SAMPLES):
                 sample_id = sample_id_start + offset
@@ -906,9 +1018,10 @@ def main():
                 print("  Omega_m_draw:", omega_m_draw)
                 print("  parameters:", params)
 
-                file_root = write_run_ini_inplace(
+                file_root = write_eft_ini_inplace(
                     params,
                     sample_id,
+                    eft_ini_path,
                     run_ini_archive_dir,
                     save_run_ini,
                 )
@@ -916,7 +1029,7 @@ def main():
 
                 success, returncode, out, err = run_camb(
                     CAMB_EXE,
-                    TEMPLATE_RUN_INI,
+                    run_ini_path,
                     CAMB_DIR,
                     omp_threads,
                 )
@@ -946,10 +1059,10 @@ def main():
                     print("    ", line)
 
                 try:
-                    background_path = CAMB_DIR / "Horndeski_solution.dat"
+                    background_path = CAMB_DIR / f"{output_root}_Horndeski_solution.dat"
                     stat = background_path.stat()
-                    print("  [DEBUG] Horndeski_solution.dat size:", stat.st_size)
-                    target_path = collect_background(CAMB_DIR, sample_id, samples_dir)
+                    print(f"  [DEBUG] {background_path.name} size:", stat.st_size)
+                    target_path = collect_background(CAMB_DIR, sample_id, samples_dir, output_root=output_root)
                     print(f"  background saved to {target_path}")
                     success_count += 1
                     append_sample_log(

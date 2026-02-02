@@ -117,6 +117,8 @@ module EFTCAMB_FM_horndeski
         !-----------------------------
         procedure :: compute_background_EFT_functions  => EFTCAMBHorndeskiBackgroundEFTFunctions
         procedure :: compute_secondorder_EFT_functions => EFTCAMBHorndeskiSecondOrderEFTFunctions
+        procedure :: compute_adotoa                    => EFTCAMBHorndeskiComputeAdotoa
+        procedure :: compute_H_derivs                  => EFTCAMBHorndeskiComputeHubbleDer
 
         ! ----------------------------
         procedure :: initialize_background           => EFTCAMBHorndeskiInitBackground               !< subroutine that initializes the background of 5e.
@@ -498,7 +500,7 @@ contains
     end subroutine EFTCAMBHorndeskiParameterValues
 
     !> Subroutine that solves the Horndeski background equations driven by {Omega(a), Lambda(a)}. ini is today.
-    subroutine EFTCAMBHorndeskiSolveBackgroundEquations( self, params_cache, H2_ini, H02, only_solve, success )
+    subroutine EFTCAMBHorndeskiSolveBackgroundEquations( self, params_cache, H2_ini, H02, only_solve, success, outroot )
 
     use, intrinsic :: ieee_arithmetic
     implicit none
@@ -509,6 +511,7 @@ contains
     real(dl),                   intent(out)   :: H02           !< value of H^2 today (a=1)
     logical,        optional                  :: only_solve    !< if .true. only solves for H^2, no EFT tables
     logical,                   intent(out)    :: success       !< whether the integration completed successfully
+    character(len=*), optional, intent(in)    :: outroot       !< root for debug output files
 
     ! ODE system size: here we only evolve y = H^2
     integer, parameter :: num_eq = 1
@@ -564,8 +567,13 @@ contains
     hit_A_singularity  = .False.
 
     if (DebugEFTCAMB) then
-        open(unit=unit_bg, file='Horndeski_solution.dat', status='replace', &
-             action='write', form='formatted')
+        if ( present(outroot) .and. len_trim(outroot) > 0 ) then
+            open(unit=unit_bg, file=trim(outroot)//'Horndeski_solution.dat', status='replace', &
+                 action='write', form='formatted')
+        else
+            open(unit=unit_bg, file='Horndeski_solution.dat', status='replace', &
+                 action='write', form='formatted')
+        end if
         write(unit_bg,'(A)') '# x  a  z  H2  Hdot  grho_m  gpres_m  Omega  Omegap  Omegapp  ' // &
                              'ca2_over_m0sq  Lambda_a2  omega_r  omega_m  omega_nu  omega_DE  omega_tot  ' // &
                              'wDE  OmegaDE  rho_m/(3H2)  P_m/(3H2)  Lambda_a2/(3H2)  Acoef  Bcoef  Cterm  ' // &
@@ -1381,7 +1389,11 @@ contains
         write(34,'(a)') '# x  a  z  c_a2_over_m0sq  Lambda_a2_over_m0sq'
         write(35,'(a)') '# x  a  z  omega_r_t  omega_m_t  omega_nu_t  omega_DE_t  omega_tot_t'
 
-        call self%solve_background_equations( params_cache, H2_ini, H02, only_solve = .False., success = success )
+        if ( present(outroot) ) then
+            call self%solve_background_equations( params_cache, H2_ini, H02, only_solve = .False., success = success, outroot = outroot )
+        else
+            call self%solve_background_equations( params_cache, H2_ini, H02, only_solve = .False., success = success )
+        end if
 
         close(33)
         close(34)
@@ -1394,7 +1406,11 @@ contains
     ! 5) solve the background equations and store the EFT functions
     !    正式跑一遍背景，填满 EFT 插值表和 H2/w_DE/Omega_DE 的数组
     !---------------------------------------------------------------
-    call self%solve_background_equations( params_cache, H2_ini, H02, only_solve = .False., success = success )
+    if ( present(outroot) ) then
+        call self%solve_background_equations( params_cache, H2_ini, H02, only_solve = .False., success = success, outroot = outroot )
+    else
+        call self%solve_background_equations( params_cache, H2_ini, H02, only_solve = .False., success = success )
+    end if
 
     end subroutine EFTCAMBHorndeskiInitBackground
 
@@ -1491,6 +1507,109 @@ contains
         eft_cache%EFTOmegaPPP = self%Omega%third_derivative(  a_eff ) ! d³Ω/da³
 
     end subroutine EFTCAMBHorndeskiBackgroundEFTFunctions
+
+    !-----------------------------------------------------------------
+    !> Use the precomputed H2 background solution to set adotoa.
+    !! Falls back to the full-map expression if H2 is not available.
+    !-----------------------------------------------------------------
+    subroutine EFTCAMBHorndeskiComputeAdotoa( self, a, eft_par_cache, eft_cache )
+
+        implicit none
+
+        class(EFTCAMB_Horndeski)                     :: self          !< the base class
+        real(dl)              , intent(in)           :: a             !< input scale factor
+        type(EFTCAMB_parameter_cache), intent(inout) :: eft_par_cache !< EFT parameter cache
+        type(EFTCAMB_timestep_cache ), intent(inout) :: eft_cache     !< timestep cache
+
+        real(dl) :: a_eff, a_min, x_eff, H2_val
+        real(dl) :: x1, x2, mu, temp
+        integer  :: ind
+
+        a_min = exp( self%x_initial )
+        a_eff = a
+        if ( a_eff < a_min ) a_eff = a_min
+        if ( a_eff > 1._dl ) a_eff = 1._dl
+
+        if ( .not. allocated(self%H2) ) then
+            call MpiStop('Horndeski: H2 array not allocated in compute_adotoa')
+        end if
+
+        x_eff = log( a_eff )
+        if ( x_eff <= self%EFTc%x_initial ) then
+            H2_val = self%H2(1)
+        else if ( x_eff >= self%EFTc%x_final ) then
+            H2_val = self%H2(self%EFTc%num_points)
+        else
+            ind = int( ( x_eff - self%EFTc%x_initial )/self%EFTc%grid_width ) + 1
+            if ( ind < 1 ) ind = 1
+            if ( ind > self%EFTc%num_points - 1 ) ind = self%EFTc%num_points - 1
+            x1 = self%EFTc%x(ind)
+            x2 = self%EFTc%x(ind+1)
+            mu = ( x_eff - x1 )/( x2 - x1 )
+            H2_val = self%H2(ind)*( 1._dl - mu ) + self%H2(ind+1)*mu
+        end if
+
+        if ( IsNaN(H2_val) .or. H2_val < 0._dl ) then
+            call MpiStop('Horndeski: H2 is NaN or negative in compute_adotoa')
+        end if
+
+        if ( H2_val > 0._dl ) then
+            eft_cache%adotoa = sqrt( H2_val )
+        else
+            eft_cache%adotoa = 0._dl
+        end if
+
+    end subroutine EFTCAMBHorndeskiComputeAdotoa
+
+    !-----------------------------------------------------------------
+    !> Override Hdot/Hdotdot with user-specified expressions.
+    !-----------------------------------------------------------------
+    subroutine EFTCAMBHorndeskiComputeHubbleDer( self, a, eft_par_cache, eft_cache )
+
+        implicit none
+
+        class(EFTCAMB_Horndeski)                     :: self          !< the base class
+        real(dl)              , intent(in)           :: a             !< input scale factor
+        type(EFTCAMB_parameter_cache), intent(inout) :: eft_par_cache !< EFT parameter cache
+        type(EFTCAMB_timestep_cache ), intent(inout) :: eft_cache     !< timestep cache
+
+        real(dl) :: H, Omega, OmegaP, OmegaPP, OmegaPPP
+        real(dl) :: cdot, ca2_over_m0sq, grho_matter, gpres_matter, gpres_matter_dot
+        real(dl) :: LLambda, LLambda_dot, denom1
+        real(dl) :: XXX
+
+        H             = eft_cache%adotoa
+        Omega         = eft_cache%EFTOmegaV
+        OmegaP        = eft_cache%EFTOmegaP
+        OmegaPP       = eft_cache%EFTOmegaPP
+        OmegaPPP      = eft_cache%EFTOmegaPPP
+        cdot          = eft_cache%EFTcdot
+        ca2_over_m0sq = eft_cache%EFTc
+        grho_matter   = eft_cache%grhom_t
+        gpres_matter  = eft_cache%gpresm_t
+        gpres_matter_dot = eft_cache%gpresdotm_t
+        LLambda       = eft_cache%EFTLambda
+        LLambda_dot   = eft_cache%EFTLambdadot
+
+        ! denom1 = 3._dl*H*(1._dl + Omega + a*OmegaP)
+        ! if ( denom1 /= 0._dl ) then
+        !     eft_cache%Hdot = ( cdot + 2._dl*H*ca2_over_m0sq - 3._dl*a*H**3*OmegaP - 1.5_dl*a**2*H**3*OmegaPP &
+        !         & - 0.5_dl*H*grho_matter - 1.5_dl*H*gpres_matter - 0.5_dl*LLambda_dot - H*LLambda )/denom1
+        ! else
+        !     eft_cache%Hdot = 0._dl
+        ! end if
+
+        denom1 = 2._dl*(1._dl + Omega + 0.5_dl*a*OmegaP)
+        if ( denom1 /= 0._dl ) then
+            eft_cache%Hdot = ( - gpres_matter - LLambda - (1._dl + Omega + 2._dl*a*OmegaP + a**2*OmegaPP)*H**2 )/denom1
+            eft_cache%Hdotdot = ( -gpres_matter_dot - 2._dl*H*gpres_matter - LLambda_dot - 2._dl*H*LLambda - (3._dl*a*OmegaP + 4._dl*a**2*OmegaPP + a**3*OmegaPPP)*H**3 - 2._dl*(1 + Omega + 2._dl*a*OmegaP + a**2*OmegaPP)*H*eft_cache%Hdot - 2._dl*(1.5_dl*a*H*OmegaP + 0.5_dl*a**2*H*OmegaPP)*eft_cache%Hdot )/denom1
+        else
+            eft_cache%Hdot = 0._dl
+            eft_cache%Hdotdot = 0._dl
+        end if
+        
+
+    end subroutine EFTCAMBHorndeskiComputeHubbleDer
 
 
     !-----------------------------------------------------------------
